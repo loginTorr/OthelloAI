@@ -45,31 +45,31 @@ def initializeGame():
 def gameStart():
     return True
 
-def AIMove():
+def AIMove(pruning):
     global positions, gameRunning
     
     if not gameRunning:
         return
     
-    # Find best move using minimax
+    # find best move
     best_move = None
     best_score = -float('inf') if positions.player == 'B' else float('inf')
     
     positions.checkMoves()
     
-    # Try each valid move and score it
+    # try and score each move
     for i in range(8):
         for j in range(8):
             if positions.positionArr[i][j] == "G":
-                # Create a copy of the position
                 newPos = GameBoard(positions.positionArr.copy(), positions.gameBoardPositionsArr, positions.player)
-                # Make the move
                 newPos.placePiece(i, j, positions.player)
-                # Switch player
                 newPos.player = 'B' if positions.player == 'W' else 'W'
                 
                 # Score this move
-                score = minimax(newPos, depth=4, maximizingPlayer=False)
+                if (pruning==True):
+                    score = minimaxPruning(newPos, depth=3, maximizingPlayer=False)
+                elif (pruning==False):
+                    score = minimax(newPos, depth=3, maximizingPlayer=False)
                 
                 if positions.player == 'B' and score > best_score:
                     best_score = score
@@ -91,7 +91,7 @@ def AIMove():
 
 
 def minimax(positions, depth, maximizingPlayer):
-    # Check terminal conditions
+    # root node or lost
     if depth == 0 or isGameOver(positions):
         return evaluatePosition(positions)
 
@@ -104,10 +104,33 @@ def minimax(positions, depth, maximizingPlayer):
     else:
         minEval = 100
         for child in getChildPositions(positions):
-            eval = minimax(child, depth - 1, False)
+            # recurse back to maximizing player
+            eval = minimax(child, depth - 1, True)
             minEval = min(minEval, eval)
         return minEval
             
+
+def minimaxPruning(positions, depth, maximizingPlayer, alpha=-100, beta=100):
+    if depth == 0 or isGameOver(positions):
+        return evaluatePosition(positions)
+
+    if maximizingPlayer:
+        value = -100
+        for child in getChildPositions(positions):
+            value = max(value, minimaxPruning(child, depth - 1, False, alpha, beta))
+            alpha = max(alpha, value)
+            if alpha >= beta:
+                break
+        return value
+    else:
+        value = 100
+        for child in getChildPositions(positions):
+            value = min(value, minimaxPruning(child, depth - 1, True, alpha, beta))
+            beta = min(beta, value)
+            if beta <= alpha:
+                break
+        return value
+
 def isGameOver(positions):
     # Save current player
     original_player = positions.player
@@ -132,7 +155,7 @@ def evaluatePosition(positions):
     blackCount = numpy.count_nonzero(positions.positionArr == 'B')
     whiteCount = numpy.count_nonzero(positions.positionArr == 'W')
     
-    # Score: positive favors black, negative favors white
+    # positive favors black, negative favors white
     return blackCount - whiteCount
 
 def getChildPositions(positions):
@@ -233,10 +256,11 @@ def showSequencesWindow():
     pygame.display.set_caption("Othello")
 
 class GameBoard:
-    def __init__(self, positionArr, gameBoardPositionsArr, player):
+    def __init__(self, positionArr, gameBoardPositionsArr, player, piecesLeft=64):
         self.positionArr = positionArr
         self.gameBoardPositionsArr = gameBoardPositionsArr
         self.player = player
+        self.piecesLeft = piecesLeft
 
     def checkMoves(self):
         # Clear previous valid moves
@@ -317,31 +341,32 @@ class GameBoard:
 
     def placePiece(self, row, column, color):
         self.positionArr[row][column] = color
+        self.piecesLeft -= 1
         self.checkOutFlanked(row, column, color)
 
     def checkOutFlanked(self, row, column, color):
         opponent = 'B' if color == 'W' else 'W'
         directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
         
-        # Check all 8 directions from placed piece
+        # check row, columns, and diagonals for opponent pieces
         for dr, dc in directions:
             piecesToFlip = []
             nr, nc = row + dr, column + dc
             
-            # Collect opponent pieces in this direction
+            # get opponent pieces to flip
             while 0 <= nr < 8 and 0 <= nc < 8 and self.positionArr[nr][nc] == opponent:
                 piecesToFlip.append((nr, nc))
                 nr += dr
                 nc += dc
             
-            # If we found own piece at end, flip all opponent pieces
+            # if own piece at end, flip opponent pieces
             if 0 <= nr < 8 and 0 <= nc < 8 and self.positionArr[nr][nc] == color:
                 for flip_row, flip_col in piecesToFlip:
                     self.positionArr[flip_row][flip_col] = color
     
     
 class Button():
-    def __init__(self, x, y, width, height, buttonText, onclickFunction=None, onePress=False):
+    def __init__(self, x, y, width, height, buttonText, onclickFunction, onePress=False):
         self.x = x
         self.y = y
         self.width = width
@@ -402,8 +427,10 @@ gameSidesColor = pygame.Color(51,25,0)
 font = pygame.font.SysFont('Arial', 40)
 buttons = []
 Button(1060, 20, 200, 100, 'New Game', gameStart)
-Button(1060, 130, 200, 100, 'AI play', AIMove)
-Button(1060, 240, 200, 100, 'Sequences', showSequencesWindow, onePress=True)
+# FIX: pass callables so AIMove runs on click, not at import time
+Button(1060, 130, 200, 100, 'AI Play', lambda: AIMove(pruning=False), onePress=True)
+Button(1060, 240, 200, 100, 'AI Pruning', lambda: AIMove(pruning=True), onePress=True)
+Button(1060, 350, 200, 100, 'Sequences', showSequencesWindow, onePress=True)
 
 curTurnSurface = pygame.Surface((220,100))
 curTurnContainer = pygame.Rect(10, 10, 220, 100)
@@ -417,7 +444,20 @@ dt = 0
 linesY = [(0,100),(0,200),(0,300),(0,400),(0,500),(0,600),(0,700),(0,800)]
 linesX = [(100,0),(200,0),(300,0),(400,0),(500,0),(600,0),(700,0),(800,0)]
 
+gameResultText = None  # winner text
 
+def endGame():
+    global gameResultText
+    if gameResultText:
+        return
+    blackCount = numpy.count_nonzero(positions.positionArr == 'B')
+    whiteCount = numpy.count_nonzero(positions.positionArr == 'W')
+    if blackCount > whiteCount:
+        gameResultText = f"Black Wins"
+    elif whiteCount > blackCount:
+        gameResultText = f"White Wins"
+    else:
+        gameResultText = f"Tie"
 
 # Game Initialization 
 while running:
@@ -442,7 +482,9 @@ while running:
                 positions = GameBoard(arrs[0], arrs[1],'B')
                 gameRunning = result
             elif button.buttonText == 'AI play':
-                AIMove()
+                AIMove(pruning=False)
+            elif button.buttonText == 'AI with Pruning':
+                AIMove(pruning=True)
 
     if positions.player == "B":
         curTurnSurface.fill(gameSidesColor)
@@ -454,6 +496,21 @@ while running:
         curTurnText = font.render("Turn: White", True, (255,255,255))
         curTurnSurface.blit(curTurnText, [ curTurnSurface.get_rect().width/2 - curTurnText.get_rect().width/2, curTurnSurface.get_rect().height/2 - curTurnText.get_rect().height/2 ])
         surface.blit(curTurnSurface, curTurnContainer)
+
+    # trigger endGame when board full or pieces exhausted
+    if positions.piecesLeft <= 0 or not any(positions.positionArr[r][c] == ' ' for r in range(8) for c in range(8)):
+        endGame()
+
+    # draw winner box if gameResultText set
+    if gameResultText:
+        resultSurf = pygame.Surface((220,140))
+        resultSurf.fill(gameSidesColor)
+        pygame.draw.rect(resultSurf, (255,255,255), resultSurf.get_rect(), 2)
+        title = font.render("Game Over", True, (255,215,0))
+        winner = font.render(gameResultText, True, (255,255,255))
+        resultSurf.blit(title, (resultSurf.get_width()/2 - title.get_width()/2, 10))
+        resultSurf.blit(winner, (resultSurf.get_width()/2 - winner.get_width()/2, 70))
+        surface.blit(resultSurf, (10, 120))
 
     surface.blit(board, (240,0))
         
