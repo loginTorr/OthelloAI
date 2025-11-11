@@ -2,6 +2,16 @@ import pygame
 import numpy
 import sys
 
+##### OTHELLO PROJECT
+### Logan Torr
+### AI 
+### 11/10/2025
+# In this project a played version of the boardgame othello is made using pygame and an AI is implemented to play against
+# The AI uses both the mini-max algorithm and mini-max with alpha beta pruning as different options for them to make their move with
+# New game - starts a new game
+# AI move - makes AI move using mini-max
+# AI Prune - makes AI move using mini-max and alpha beta pruning
+# Sequences - shows the possible moves for the AI to make as well as their heuristic value
 
 """
 GAME RULES
